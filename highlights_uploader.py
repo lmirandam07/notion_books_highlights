@@ -1,9 +1,10 @@
-import os
 import fire
-import notion
 import time
-from dotenv import load_dotenv
+from decouple import config
 from bs4 import BeautifulSoup
+from notion.client import NotionClient
+from notion.block import QuoteBlock
+from notion.block import SubheaderBlock
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 
@@ -13,9 +14,34 @@ class HighlightsUploader(object):
         self.book_name = book_name
 
     def upload(self):
-        load_dotenv()
-        notes_url = os.getenv('GOODREADS_NOTES_URL')
-        highlights = self.scrape(notes_url)
+        NOTION_TOKEN = config('NOTION_TOKENV2')
+        NOTES_URL = config('GOODREADS_NOTES_URL')
+        NOTION_BOOKS_LIST = config('NOTION_BOOKS_LIST_URL')
+        try:
+            highlights = self.scrape(NOTES_URL)
+            client = NotionClient(token_v2=NOTION_TOKEN)
+            books_collection = client.get_collection_view(NOTION_BOOKS_LIST)
+            book_searched_id = ""
+
+            for book_row in books_collection.collection.get_rows():
+                if self.book_name.lower() in book_row.title.lower(): # Check if book exists in Notion books list
+                    book_searched_id = book_row.id
+                    break
+
+            if not book_searched_id:
+                raise Exception("Book not found")
+
+            book_page = client.get_block(book_searched_id)
+            book_page.children.add_new(SubheaderBlock, title="Highlights")
+
+            for h in highlights: # Add blockquotes for every highlight in its respective note
+                book_page.children.add_new(QuoteBlock, title=h)
+
+            print("Note updated successfully")
+            return True
+
+        except Exception as e:
+            print(e)
 
     def get_webdriver(self):
         options = Options()
@@ -54,11 +80,7 @@ class HighlightsUploader(object):
             print(e)
 
 
-
-    def update_notion(highlights_list):
-        pass
-
 if __name__ == '__main__':
     # fire.Fire(HighlightsUploader)
     uploader = HighlightsUploader('motivation hacker')
-    uploader.scrape('https://www.goodreads.com/notes/114436946-luis-miranda-m')
+    uploader.upload()
